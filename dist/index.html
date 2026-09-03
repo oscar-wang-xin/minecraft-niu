@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+  <title>MineCraft 牛来网页版</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    #game-canvas { display: block; width: 100%; height: 100%; }
+    /* —— 全局 UI 字体(像素感:等宽 + 立体阴影)—— */
+    #ui, #ui * {
+      font-family: 'Courier New', Consolas, monospace;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .hidden { display: none !important; }
+  </style>
+  <script type="module" crossorigin src="./assets/index-CDgONfAi.js"></script>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+  <div id="ui"></div>
+  <script>
+    // —— 兼容性防护(非 module,保证 file:// 下也能提示)——
+    (function () {
+      function fatal(msg) {
+        document.body.innerHTML =
+          '<div style="position:fixed;inset:0;background:#1a1a1a;color:#eee;display:flex;' +
+          'flex-direction:column;align-items:center;justify-content:center;font-family:monospace;' +
+          'text-align:center;padding:24px;z-index:99">' +
+          '<div style="font-size:22px;margin-bottom:14px;color:#ffd21e">⚠ 无法启动</div>' +
+          '<div style="max-width:640px;line-height:1.8;font-size:14px;white-space:pre-wrap">' + msg + '</div></div>';
+      }
+      window.__mcFatal = fatal;
+
+      if (location.protocol === 'file:') {
+        window.addEventListener('DOMContentLoaded', function () {
+          fatal('不能直接双击 index.html —— 浏览器会拦截 ES Module 文件。\n\n正确启动方式(任选其一):\n' +
+            '  ★ 双击项目里的「启动游戏.bat」,浏览器会自动打开\n' +
+            '  或手动:\n    1) 在项目目录打开终端: npm install\n    2) npm run dev\n    3) 浏览器访问 http://localhost:5173\n\n' +
+            '生产版:npm run build 后用 npm run preview 或任意静态服务器访问 dist/');
+        });
+      }
+      window.addEventListener('error', function (e) {
+        var el = document.getElementById('mc-errbar');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'mc-errbar';
+          el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;background:#7a1010;color:#fff;' +
+            'font:12px monospace;padding:6px 10px;z-index:98;white-space:pre-wrap';
+          document.body.appendChild(el);
+        }
+        el.textContent = '脚本错误: ' + (e.message || e.error);
+      });
+    })();
+  </script>
+</body>
+</html>
