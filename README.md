@@ -8,6 +8,10 @@
 
 ## 🎮 核心玩法
 
+![牛来事件](screenshots/moo-coming.png)
+![牛雨天气](screenshots/cow-rain.png)
+![合成台](screenshots/craft-panel.png)
+
 ### 牛来事件
 - **按 G** 召唤牛来事件 —— 天空转暗红、屏幕红晕、魔性 BGM
 - 金褐牛群从四面八方冲来将你撞飞
