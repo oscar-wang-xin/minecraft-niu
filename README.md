@@ -27,11 +27,11 @@
 - 结束时全场牛排队齐喊"妈妈"(TTS 大合唱)
 
 ### 牛粪经济系统
-- **挖草方块** 25% 概率掉落**牛粪**
-- **按 C** 查看收集：牛粪、火把、烟花计数
-- **按 1**: 2 牛粪 → 1 火把
-- **按 2**: 1 火把 + 1 烟花 → 点燃**牛来烟花秀**（10 个牛头升空）
-- 花豹皮自动同步为烟花
+- **挖草方块** 10% 概率掉落**牛粪实体**（需走过去捡）；35% 概率出蛇
+- **按 C** 打开**合成台面板**：展示牛粪/豹皮/火把/烟花图标与数量
+- **2 牛粪 → 1 火把**
+- **2 豹皮 → 1 烟花**
+- **1 火把 + 1 烟花 → 合成烟花实体**（在眼前生成，点击发射 10 个牛头/豹子，魔性哞叫）
 
 ## 🎯 完整生态链
 
@@ -164,11 +164,11 @@ A **Three.js + Vite** powered Minecraft web clone with magical "Moo" ecosystem. 
 - Finale: all cows queue up and scream "Mama!" (TTS chorus)
 
 ### Cow Dung Economy
-- **Dig grass blocks**: 25% chance to drop cow dung
-- **Press C**: view dung/torch/firework count
-- **Press 1**: 2 dung → 1 torch
-- **Press 2**: 1 torch + 1 firework → launch **Moo Firework Show** (10 cow heads)
-- Leopard pelts auto-convert to fireworks
+- **Dig grass blocks**: 35% chance to drop a **dung pickup** (walk over it); 35% chance to spawn a snake
+- **Press C**: open the **crafting panel** showing dung/pelt/torch/firework icons & counts
+- **2 dung → 1 torch**
+- **2 pelts → 1 firework**
+- **1 torch + 1 firework → launch Moo Firework Show** (12 cow heads, meme moos)
 
 ## 🎯 Full Ecosystem Chain
 

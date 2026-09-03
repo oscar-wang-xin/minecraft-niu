@@ -10,6 +10,7 @@ import { BLOCK, BLOCKS, HOTBAR_BLOCKS, buildAtlas, TILE_PX, ATLAS_COLS, ATLAS_RO
 import { HUD } from './hud.js';
 import { Sfx } from './audio.js';
 import { CowEvent } from './cow.js';
+import { makeDungIcon, makeTorchIcon, makeFireworkIcon } from './items.js';
 import * as storage from './storage.js';
 
 // ---------- 基础 ----------
@@ -57,7 +58,8 @@ const sfx = new Sfx();
 // "牛来"事件
 const cowEvent = new CowEvent({ scene, hud, sfx });
 cowEvent.onShake = (amp, dur) => { shakeAmp = amp; shakeDur = dur; shakeT = dur; };
-cowEvent.onPelt = (n) => hud.updatePelts(n);
+cowEvent.onPelt = (n) => { peltCount = n; hud.updatePelts(n); hud.refreshCraft(net()); };
+cowEvent.onDung = (n) => { dungCount = n; hud.updateDung(n); hud.refreshCraft(net()); };
 cowEvent.onLeopardKill = (n) => { fireworkCount = n; hud.updateFireworks(n); };
 cowEvent.onCowLand = (x, y, z) => spawnBreakParticles(x - 0.5, y - 1, z - 0.5, BLOCK.DIRT);
 const COW_SKY = new THREE.Color(0x5a1510); // 事件时天空的暗红
@@ -83,10 +85,22 @@ let world = null;
 let player = null;
 let hotbarIndex = 0;
 let dungCount = 0;  // 牛粪收集数
+let peltCount = 0;  // 豹皮数
 let torchCount = 0;  // 火把数
 let fireworkCount = 0;  // 烟花数
 let saveDirty = false;
+let craftOpen = false;   // 合成面板是否打开
 let currentHit = null;
+
+// 合成面板资源快照(main 与 cowEvent 回调共用)
+function net() {
+  return { 
+    dung: Number(dungCount) || 0, 
+    pelt: Number(peltCount) || 0, 
+    torch: Number(torchCount) || 0, 
+    firework: Number(fireworkCount) || 0 
+  };
+}
 
 const chunkMeshes = new Map(); // key -> { solid, water }
 const dirtyChunks = new Set();
@@ -235,47 +249,35 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyY' && state === 'playing') {
     cowEvent.tryStartRain();
     return;
-  if (e.code === 'KeyC' && state === 'playing') {
-    hud.showTip(`牛粪:${dungCount} 火把:${torchCount} | 烟花:${fireworkCount}`);
-    hud.showTip('按 1:2 牛粪→1 火把 | 按 2:1 火把 +1 烟花→点燃烟花');
   }
+  if (e.code === 'KeyC' && state === 'playing') {
+    if (!craftOpen) {
+      craftOpen = true;
+      hud.toggleCraft();          // 打开
+      refreshCraft();
+      // 释放鼠标才能点击合成按钮
+      if (document.pointerLockElement === canvas) { try { document.exitPointerLock(); } catch { /* */ } }
+    } else {
+      craftOpen = false;
+      hud.toggleCraft();          // 关闭
+      lockPointer();
+    }
+    return;
+  }
+  if (e.code === 'Escape' && state === 'playing') {
+    if (craftOpen) {
+      craftOpen = false;
+      hud.toggleCraft();          // 关闭面板
+      lockPointer();
+    } else {
+      pauseGame();
+    }
+    return;
   }
   if (e.code.startsWith('Digit')) {
     const n = Number(e.code.slice(5));
     if (n >= 1 && n <= 9) { hotbarIndex = n - 1; updateHotbar(); }
     return;
-
-    // 合成系统（游戏中按 C 查看配方）
-    if (state === 'playing') {
-      if (e.code === 'Digit1' && dungCount >= 2) {  // 2 牛粪→1 火把
-        dungCount -= 2; torchCount++;
-        hud.showTip(`合成火把！牛粪:${dungCount} 火把:${torchCount}`);
-        sfx.pickupDing();
-      } else if (e.code === 'Digit2' && fireworkCount >= 1 && torchCount >= 1) {  // 点燃烟花
-        torchCount--; fireworkCount--;
-        hud.showTip('烟花发射！牛来！');
-        sfx.moo(0.8);
-        // 发射牛来烟花
-        for (let fi = 0; fi < 10; fi++) {
-          setTimeout(() => {
-            const ang = Math.random() * Math.PI * 2;
-            const dist = 10 + Math.random() * 15;
-            const mat = new THREE.SpriteMaterial({ map: cowEvent.tex, transparent: true });
-            const sprite = new THREE.Sprite(mat);
-            sprite.scale.setScalar(1.8);
-            sprite.position.set(player.pos.x + Math.cos(ang)*dist, player.pos.y + 25, player.pos.z + Math.sin(ang)*dist);
-            scene.add(sprite);
-            let vy = -8, t = 0;
-            (function animFW() {
-              sprite.position.y += vy * 0.05; sprite.material.rotation += 0.15;
-              t++;
-              if (t < 100 && sprite.position.y > player.pos.y + 5) requestAnimationFrame(animFW);
-              else { scene.remove(sprite); sprite.material.dispose(); }
-            })();
-          }, fi * 200);
-        }
-      }
-    }
   }
   if (e.code === 'KeyW') {
     const now = performance.now();
@@ -295,6 +297,22 @@ canvas.addEventListener('mousedown', (e) => {
   if (state !== 'playing') return;
   if (document.pointerLockElement !== canvas) { lockPointer(); return; }
   if (e.button === 0) {
+    // 先检查是否点击了烟花实体
+    if (window.__mcFireworkClick) {
+      const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+      // 简单检测：烟花在玩家前方 5 格内
+      const fw = scene.children.find(c => c.userData && c.userData.isFirework);
+      if (fw && fw.userData.onClick) {
+        const dist = fw.position.distanceTo(camera.position);
+        if (dist < 5) {
+          fw.userData.onClick();
+          window.__mcFireworkClick = null;
+          return;
+        }
+      }
+    }
     // 事件进行中先尝试打牛(射线-球检测),打空才挖方块
     const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
     const hitCow = cowEvent.tryHit(camera.position.x, camera.position.y, camera.position.z, dir.x, dir.y, dir.z);
@@ -323,7 +341,7 @@ function lockPointer() {
   try { canvas.requestPointerLock(); } catch { /* 忽略 */ }
 }
 document.addEventListener('pointerlockchange', () => {
-  if (document.pointerLockElement !== canvas && state === 'playing') pauseGame();
+  if (document.pointerLockElement !== canvas && state === 'playing' && !craftOpen) pauseGame();
 });
 
 window.addEventListener('resize', () => {
@@ -407,7 +425,11 @@ function tryBreak() {
       }, 1000);
     }
   }
-  if (id === BLOCK.GRASS) cowEvent.onStoneBroken(x, y, z);  // 草方块下出蛇
+  // 草方块:35% 出蛇(引花豹),另外 10% 掉落牛粪实体(需走过去捡)
+  if (id === BLOCK.GRASS) {
+    cowEvent.onStoneBroken(x, y, z);
+    if (Math.random() < 0.10) cowEvent.spawnPickup(x, y, z, 'dung');
+  }
 }
 
 function intersectsPlayer(x, y, z) {
@@ -469,8 +491,18 @@ function startGame(seedStr, save) {
   cowEvent.ensureTex();
   hud.giveCowFace(cowEvent.tex.userData.canvas);
   hud.initPeltIcon(atlas, cowEvent.ensurePeltTex().userData.canvas);
+  // 物品图标:牛粪/火把/烟花/豹皮 + 合成面板
+  const iconDung = makeDungIcon();
+  const iconTorch = makeTorchIcon();
+  const iconFire = makeFireworkIcon();
+  hud.setCounterIcon('dung-counter', iconDung);
+  hud.setCounterIcon('torch-counter', iconTorch);
+  hud.initFireworkIcon(iconFire);
+  hud.initCraftIcons(iconDung, cowEvent.ensurePeltTex().userData.canvas, iconTorch);
   hud.updatePelts(0);
   hud.updateFireworks(0);
+  hud.updateDung(0);
+  hud.updateTorch(0);
 
   // 清空旧网格,同步预生成周围区块
   for (const k of [...chunkMeshes.keys()]) disposeChunk(k);
@@ -488,6 +520,8 @@ function startGame(seedStr, save) {
 function pauseGame() {
   if (state !== 'playing') return;
   state = 'paused';
+  craftOpen = false;
+  hud.hideCraft ? hud.hideCraft() : null;
   input.sprint = false;
   keys.clear();
   cowEvent.pause();
@@ -527,6 +561,75 @@ hud.bind({
   onQuit: quitToTitle,
 });
 hud.showMenu(!!storage.loadGame());
+
+// ---------- 合成系统 ----------
+function refreshCraft() { hud.refreshCraft(net()); }
+
+function craftTorch() {
+  if (dungCount >= 2) { dungCount -= 2; torchCount++; hud.updateDung(dungCount); hud.updateTorch(torchCount); sfx.pickupDing(); }
+  refreshCraft();
+}
+function craftFirework() {
+  if (peltCount >= 2) { peltCount -= 2; fireworkCount++; hud.updatePelts(peltCount); hud.updateFireworks(fireworkCount); sfx.pickupDing(); }
+  refreshCraft();
+}
+function craftLaunch() {
+  if (torchCount >= 1 && fireworkCount >= 1) {
+    torchCount--; fireworkCount--;
+    hud.updateTorch(torchCount); hud.updateFireworks(fireworkCount);
+    hud.showTip('烟花已放置！点击发射！');
+    // 在玩家眼前生成烟花实体（可点击）
+    const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+    const spawnX = player.pos.x + dir.x * 3;
+    const spawnY = player.pos.y + 1.5;
+    const spawnZ = player.pos.z + dir.z * 3;
+    // 烟花贴图：用烟花图标或豹皮（没有牛时用豹子）
+    const fireworkTex = makeFireworkIcon();
+    const mat = new THREE.SpriteMaterial({ map: fireworkTex, transparent: true });
+    const fireworkSprite = new THREE.Sprite(mat);
+    fireworkSprite.scale.setScalar(1.2);
+    fireworkSprite.position.set(spawnX, spawnY, spawnZ);
+    fireworkSprite.userData = { isFirework: true, spawnX, spawnY, spawnZ };
+    scene.add(fireworkSprite);
+    // 点击烟花发射
+    fireworkSprite.userData.onClick = () => {
+      scene.remove(fireworkSprite);
+      fireworkSprite.material.dispose();
+      launchFireworks(spawnX, spawnY, spawnZ);
+    };
+    // 添加点击检测（在 main.js 的 mousedown 里处理）
+    window.__mcFireworkClick = fireworkSprite.userData.onClick;
+  }
+  refreshCraft();
+}
+
+function launchFireworks(sx, sy, sz) {
+  sfx.moo(1.2);
+  hud.showTip('牛来烟花发射！');
+  // 发射 10 个牛头（或豹子）
+  const tex = cowEvent.tex || cowEvent.ensurePeltTex();
+  for (let fi = 0; fi < 10; fi++) {
+    setTimeout(() => {
+      const ang = Math.random() * Math.PI * 2;
+      const dist = 3 + Math.random() * 8;
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.setScalar(1.5);
+      sprite.position.set(sx + Math.cos(ang)*dist, sy + 5, sz + Math.sin(ang)*dist);
+      scene.add(sprite);
+      let vy = -8, t = 0;
+      (function animFW() {
+        sprite.position.y += vy * 0.05;
+        sprite.material.rotation += 0.2;
+        t++;
+        if (t < 100 && sprite.position.y > player.pos.y + 2) requestAnimationFrame(animFW);
+        else { scene.remove(sprite); sprite.material.dispose(); }
+      })();
+    }, fi * 150);
+  }
+}
+
+hud.bindCraft({ onTorch: craftTorch, onFirework: craftFirework, onLaunch: craftLaunch, onClose: () => hud.hideCraft() });
 
 // ---------- 主循环 ----------
 let last = performance.now();

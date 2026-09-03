@@ -84,6 +84,31 @@ const CSS = `
   background: rgba(12,12,12,.55); border: 2px solid rgba(0,0,0,.7); border-radius: 3px; }
 #firework-counter canvas { width: 26px; height: 26px; image-rendering: pixelated; }
 #firework-counter span { color: #ff6600; font-size: 15px; font-weight: bold; text-shadow: 2px 2px 0 #222; }
+#dung-counter, #torch-counter { position: absolute; left: 50%; bottom: 74px; transform: translateX(-260px);
+  display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px;
+  background: rgba(12,12,12,.55); border: 2px solid rgba(0,0,0,.7); border-radius: 3px; }
+#torch-counter { transform: translateX(-400px); }
+#dung-counter canvas, #torch-counter canvas { width: 26px; height: 26px; image-rendering: pixelated; }
+#dung-counter span { color: #c9a95e; font-size: 15px; font-weight: bold; text-shadow: 2px 2px 0 #222; }
+#torch-counter span { color: #ffb347; font-size: 15px; font-weight: bold; text-shadow: 2px 2px 0 #222; }
+
+/* —— 合成面板 —— */
+#craft-panel { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  background: rgba(20,20,20,.92); border: 2px solid #5a5a5a; border-radius: 4px;
+  padding: 18px 22px; pointer-events: auto; min-width: 340px; display: none; }
+#craft-panel h3 { color: #fff; font-size: 18px; margin-bottom: 14px; text-align: center; text-shadow: 2px 2px 0 #333; }
+#craft-panel .craft-row { display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; padding: 8px; border: 1px solid rgba(255,255,255,.12); border-radius: 3px; }
+#craft-panel .craft-item { display: flex; align-items: center; gap: 8px; color: #ddd; font-size: 14px; }
+#craft-panel .craft-item canvas { width: 30px; height: 30px; image-rendering: pixelated; }
+#craft-panel button { font: inherit; font-size: 13px; font-weight: bold; padding: 6px 14px; cursor: pointer;
+  color: #fff; background: linear-gradient(#8a8a8a,#6d6d6d); border: 2px solid #000; border-radius: 2px;
+  text-shadow: 1px 1px 0 #333; }
+#craft-panel button:hover { filter: brightness(1.15); }
+#craft-panel button.disabled { opacity: .4; cursor: not-allowed; filter: none; }
+#craft-panel .craft-close { position: absolute; top: 4px; right: 8px; cursor: pointer; color: #ccc; font-size: 18px; }
+#craft-panel .craft-close:hover { color: #fff; }
+#craft-panel .craft-hint { color: #888; font-size: 11px; margin-top: 6px; text-align: center; }
 
 /* —— "牛来"事件 UI —— */
 #cow-banner { position: absolute; left: 50%; top: 16%; transform: translate(-50%, -50%) rotate(-4deg);
@@ -121,6 +146,8 @@ export class HUD {
         <div id="cow-banner" class="hidden">牛来!!!<small>MOO COMING</small></div>
         <div id="pelt-counter" class="hidden"><canvas width="16" height="16"></canvas><span>× 0</span></div>
         <div id="firework-counter" class="hidden"><canvas width="16" height="16"></canvas><span>× 0</span></div>
+        <div id="dung-counter" class="hidden"><canvas width="16" height="16"></canvas><span>× 0</span></div>
+        <div id="torch-counter" class="hidden"><canvas width="16" height="16"></canvas><span>× 0</span></div>
         <div id="crosshair"></div>
         <div id="hotbar"></div>
         <div id="hb-name"></div>
@@ -149,6 +176,23 @@ export class HUD {
           <b>左键</b> 挖掘 · <b>右键</b> 放置 · <b>滚轮</b> 选方块 · <b>F3</b> 调试 · <b>ESC</b> 暂停
         </div>
         <div id="menu-version">MineCraft 牛来网页版 v1.1 · Three.js + Vite · 无限世界 · 自动存档</div>
+      </div>
+      <div id="craft-panel">
+        <div class="craft-close">×</div>
+        <h3>🐮 牛来合成台</h3>
+        <div class="craft-row">
+          <div class="craft-item"><canvas width="16" height="16"></canvas><span class="nm">牛粪</span><span class="ct">× 0</span></div>
+          <button class="craft-btn" data-craft="torch">2 牛粪 → 火把</button>
+        </div>
+        <div class="craft-row">
+          <div class="craft-item"><canvas width="16" height="16"></canvas><span class="nm">花豹皮</span><span class="ct">× 0</span></div>
+          <button class="craft-btn" data-craft="firework">2 豹皮 → 烟花</button>
+        </div>
+        <div class="craft-row">
+          <div class="craft-item"><canvas width="16" height="16"></canvas><span class="nm">火把</span><span class="ct">× 0</span></div>
+          <button class="craft-btn" data-craft="launch">火把+烟花 → 点燃</button>
+        </div>
+        <div class="craft-hint">按 C 关闭 · 挖草得牛粪 · 打花豹得豹皮</div>
       </div>
     `;
 
@@ -286,6 +330,79 @@ export class HUD {
     if (n <= 0) { el.classList.add('hidden'); return; }
     el.classList.remove('hidden');
     el.querySelector('span').textContent = `× ${n}`;
+  }
+
+  // 通用计数器图标(把 canvas 贴到某个 counter 上)
+  setCounterIcon(counterId, canvas) {
+    const el = this.$(counterId);
+    if (!el) return;
+    const c = el.querySelector('canvas');
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, 16, 16);
+    ctx.drawImage(canvas, 0, 0, 16, 16);
+  }
+
+  initFireworkIcon(fireworkCanvas) { this.setCounterIcon('firework-counter', fireworkCanvas); }
+
+  updateDung(n) {
+    const el = this.$('dung-counter');
+    if (n <= 0) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.querySelector('span').textContent = `× ${n}`;
+  }
+
+  updateTorch(n) {
+    const el = this.$('torch-counter');
+    if (n <= 0) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.querySelector('span').textContent = `× ${n}`;
+  }
+
+  // ---- 合成面板(net = {dung, pelt, torch, firework}) ----
+  toggleCraft() {
+    const el = this.$('craft-panel');
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+    if (el.style.display === 'block') this.refreshCraft();
+  }
+  hideCraft() { this.$('craft-panel').style.display = 'none'; }
+
+  refreshCraft(net) {
+    const el = this.$('craft-panel');
+    const rows = el.querySelectorAll('.craft-row');
+    const setCt = (rowIdx, val) => {
+      const ct = rows[rowIdx].querySelector('.ct');
+      if (ct) ct.textContent = `× ${val}`;
+    };
+    if (net) {
+      setCt(0, net.dung); setCt(1, net.pelt); setCt(2, net.torch);
+      // 按钮可用性
+      rows[0].querySelector('button').classList.toggle('disabled', net.dung < 2);
+      rows[1].querySelector('button').classList.toggle('disabled', net.pelt < 2);
+      rows[2].querySelector('button').classList.toggle('disabled', net.torch < 1 || net.firework < 1);
+    }
+  }
+
+  bindCraft({ onTorch, onFirework, onLaunch, onClose }) {
+    const el = this.$('craft-panel');
+    el.querySelector('.craft-close').onclick = onClose;
+    el.querySelector('[data-craft="torch"]').onclick = onTorch;
+    el.querySelector('[data-craft="firework"]').onclick = onFirework;
+    el.querySelector('[data-craft="launch"]').onclick = onLaunch;
+  }
+
+  // 设置合成面板每行图标(dung/pelt/torch 三个 canvas)
+  initCraftIcons(dungCanvas, peltCanvas, torchCanvas) {
+    const el = this.$('craft-panel');
+    const rows = el.querySelectorAll('.craft-row');
+    const draw = (rowIdx, canvas) => {
+      const c = rows[rowIdx].querySelector('canvas');
+      const ctx = c.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, 16, 16);
+      ctx.drawImage(canvas, 0, 0, 16, 16);
+    };
+    draw(0, dungCanvas); draw(1, peltCanvas); draw(2, torchCanvas);
   }
 
   // —— "牛来"事件 UI ——

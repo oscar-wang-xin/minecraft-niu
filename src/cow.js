@@ -128,6 +128,33 @@ export function makePeltTexture() {
   return canvasTexture(c);
 }
 
+// ---------- 像素牛粪掉落物(深棕圆团 + 立体高光 + 顶部小尖) ----------
+export function makeDungTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const P = 8;
+  const px = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(x * P, y * P, P, P); };
+  const rect = (x0, y0, x1, y1, col) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) px(x, y, col);
+  };
+  const BODY = '#6b4a25', BODY_D = '#4a3013', HI = '#8a6236', TIP = '#3d270e';
+  // 底部宽圆台
+  rect(2, 3, 5, 5, BODY); rect(1, 4, 6, 6, BODY_D); rect(1, 6, 6, 6, BODY_D);
+  rect(2, 5, 5, 5, BODY); rect(2, 6, 5, 6, BODY);
+  // 中部
+  rect(2, 4, 5, 4, BODY); rect(3, 3, 4, 3, BODY); rect(3, 5, 4, 5, BODY);
+  // 顶部小尖(牛粪标志性的叠层尖顶)
+  px(3, 2, BODY); px(4, 2, BODY); px(3, 3, TIP); px(4, 3, TIP);
+  px(3, 1, TIP); px(4, 1, TIP);
+  // 立体感:左侧高光
+  px(2, 4, HI); px(2, 5, HI); px(3, 4, HI); px(3, 5, HI);
+  // 纹理颗粒
+  px(4, 6, BODY_D); px(5, 5, BODY_D); px(1, 5, BODY_D);
+  px(4, 4, BODY_D); px(2, 6, BODY_D);
+  return canvasTexture(c);
+}
+
 // ---------- 像素蛇(盘绕,草绿底 + 深纹 + 红信子) ----------
 export function makeSnakeTexture() {
   const c = document.createElement('canvas');
@@ -255,6 +282,9 @@ export class CowEvent {
     this.peltTex = null;
     this.peltCount = 0;
     this.onPelt = null;        // (count) => void,拾取豹皮时回调
+    this.dungTex = null;
+    this.dungCount = 0;        // 拾取牛粪总数(供 main 读取)
+    this.onDung = null;        // (count) => void,拾取牛粪时回调
     this.onLeopardKill = null;  // (count) => void,杀死花豹时回调
     this.snakes = [];
     this.snakeTex = null;
@@ -268,6 +298,11 @@ export class CowEvent {
   ensurePeltTex() {
     if (!this.peltTex) this.peltTex = makePeltTexture();
     return this.peltTex;
+  }
+
+  ensureDungTex() {
+    if (!this.dungTex) this.dungTex = makeDungTexture();
+    return this.dungTex;
   }
 
   ensureTex() { if (!this.tex) this.tex = makeCowTexture(); }
@@ -530,17 +565,25 @@ export class CowEvent {
 
   // ---------- 豹皮掉落物:落地漂浮,靠近自动拾取 ----------
 
+  // 兼容入口:豹皮掉落
   spawnPelt(x, y, z) {
+    this.spawnPickup(x, y, z, 'pelt');
+  }
+
+  // 通用掉落物:type = 'pelt' | 'dung'
+  spawnPickup(x, y, z, type) {
     if (!this.world || !this.player) return;
-    const peltTex = this.ensurePeltTex();
-    const mat = new THREE.SpriteMaterial({ map: peltTex, transparent: true });
+    let tex, scale;
+    if (type === 'dung') { tex = this.ensureDungTex(); scale = 0.5; }
+    else { tex = this.ensurePeltTex(); scale = 0.55; type = 'pelt'; }
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
     const sprite = new THREE.Sprite(mat);
-    sprite.scale.setScalar(0.55);
+    sprite.scale.setScalar(scale);
     const groundY = Math.max(SEA_LEVEL + 1, this.world.heightAt(Math.floor(x), Math.floor(z))) + 1.35;
     sprite.position.set(x, Math.max(y, groundY), z);
     this.scene.add(sprite);
     this.pickups.push({
-      sprite, vy: 2.5, grounded: false,
+      sprite, type, vy: 2.5, grounded: false,
       groundY, age: 0,
     });
   }
@@ -565,9 +608,15 @@ export class CowEvent {
         const dx = p.x - u.sprite.position.x, dy = (p.y + 0.9) - u.sprite.position.y, dz = p.z - u.sprite.position.z;
         if (dx * dx + dz * dz < 1.9 && Math.abs(dy) < 2.2) {
           this.removePelt(i);
-          this.peltCount++;
-          this.sfx.pickupDing();
-          if (this.onPelt) this.onPelt(this.peltCount);
+          if (u.type === 'dung') {
+            this.dungCount++;
+            this.sfx.pickupDing();
+            if (this.onDung) this.onDung(this.dungCount);
+          } else {
+            this.peltCount++;
+            this.sfx.pickupDing();
+            if (this.onPelt) this.onPelt(this.peltCount);
+          }
         }
       }
     }
